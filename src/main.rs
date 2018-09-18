@@ -1,22 +1,50 @@
 use std::net::*;
 use std::thread::*;
 use std::{env,str};
+use std::collections::HashMap;
+use std::thread;
+use std::time::*;
 
+fn connection_listener(){
+    let mut cache : HashMap<SocketAddr, std::time::SystemTime> = HashMap::new();
+    let args: Vec<String> = env::args().collect();
+    let socket = UdpSocket::bind("0.0.0.0:6000").expect("could not bind socket");
+    println!("{:?}",socket);
+    let mcast_group: IpAddr =  args[1].parse().expect("wrong address");
+    match mcast_group {
+        IpAddr::V4(ipv4) => socket.join_multicast_v4(&ipv4,&Ipv4Addr::new(0,0,0,0)),
+        IpAddr::V6(ipv6) => socket.join_multicast_v6(&ipv6,0),
+    };
+    let mut buffer = [0u8; 1600];
+    socket.set_read_timeout(Option::from(Duration::from_secs(3)));
+    loop {
+        let (_, src_addr) = socket.recv_from(&mut buffer).expect("failed to read from server");
+        cache.entry(src_addr).or_insert(std::time::SystemTime::now());
+        println!("{}",cache.iter().filter(|(_,x)| { x.elapsed().unwrap()<Duration::from_secs(2) }).count());
 
-fn main() {
+        println!("{}",str::from_utf8(&mut buffer).unwrap());
+    }
+}
+
+fn sender(){
+    println!("start sending");
     let mcast_group: Ipv4Addr = "239.0.0.1".parse().expect("");
     let port = 6000_u16;
-    let any = "0.0.0.0".parse().expect("");
+    let any:IpAddr = "0.0.0.0".parse().expect("");
     let mut buffer = [0u8; 1600];
-    if env::args().count() > 1 {
-        let socket = UdpSocket::bind((any, port))
-            .expect("could not bind sockeet");
-        socket.join_multicast_v4(&mcast_group, &any);
-        socket.recv_from(&mut buffer).expect("failed to write to server");
-        print!("{}", str::from_utf8(&buffer).expect(""));
-    }else {
-        let socket = UdpSocket::bind((any,0))
-            .expect("could not create server ");
-        socket.send_to("Hello world!".as_bytes(),&(mcast_group,port)).expect("");
+    let socket = UdpSocket::bind((any,0))
+        .expect("could not create server ");
+    loop {
+        socket.send_to("Hello world!".as_bytes(),&(mcast_group, port)).expect("");
+        thread::sleep(Duration::from_millis(1000));
+        println!("send successfully");
     }
+}
+
+fn main() {
+    let _listener_handle = thread::Builder::new().spawn(connection_listener);
+    thread::sleep(Duration::from_millis(100));
+    let _sender_handle = thread::Builder::new().spawn(sender);
+    _sender_handle.unwrap().join();
+    _listener_handle.unwrap().join();
 }
