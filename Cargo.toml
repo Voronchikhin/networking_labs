@@ -1,0 +1,6 @@
+[package]
+name = "Multicaster"
+version = "0.1.0"
+authors = ["Voronchikhin <m.voronchikhin@g.nsu.ru>"]
+
+[dependencies]
