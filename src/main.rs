@@ -1,4 +1,6 @@
 extern crate nix;
+extern crate core;
+
 use std::net::*;
 use std::{env,str};
 use std::str::FromStr;
@@ -9,12 +11,15 @@ use std::{io, mem};
 use std::thread::*;
 use std::thread;
 use nix::sys::socket;
-use nix::sys::socket::sockopt::ReuseAddr;
+use nix::sys::socket::sockopt::ReusePort;
+use core::borrow::BorrowMut;
 
 fn connection_listener(){
-    let mut cache : HashMap<SocketAddr, std::time::SystemTime> = HashMap::new();
+    //let mut current_time = SystemTime::now().clone();
+    //let mut cache : HashMap<SocketAddr, &mut SystemTime> = HashMap::new();
+
     let args: Vec<String> = env::args().collect();
-    let socket = UdpSocket::bind("127.0.0.1:6000").expect("could not bind socket");
+    let socket = UdpSocket::bind("0.0.0.0:6000").expect("could not bind socket");
 
     socket.set_multicast_loop_v4(true).expect("could not use multicast");
     println!("{:?}",socket);
@@ -27,12 +32,18 @@ fn connection_listener(){
         IpAddr::V6(ipv6) => socket.join_multicast_v6(&ipv6,0),
     };
     let mut buffer = [0u8; 1600];
-    socket::setsockopt(socket.as_raw_fd(), ReuseAddr, &true).expect("setsockopt failed");
-    //socket.set_read_timeout(Option::from(Duration::from_secs(3)));
+    socket::setsockopt(socket.as_raw_fd(), ReusePort, &true).expect("setsockopt failed");
+    socket.set_read_timeout(Option::from(Duration::from_secs(3)));
     loop {
-        let (_, src_addr) = socket.recv_from(&mut buffer).expect("failed to read from server");
-        cache.entry(src_addr).or_insert(std::time::SystemTime::now());
-        println!("{}",cache.iter().filter(|(_,x)| { x.elapsed().unwrap()<Duration::from_secs(4) }).count());
+        let (_, src_addr) = match socket.recv_from(&mut buffer){
+            Ok( (i,addr) ) => (i, addr),
+            Err(_) => (0, SocketAddr::from_str("0.0.0.0:6000").unwrap()),
+        };
+        //current_time = SystemTime::now().clone();
+        //let entry = cache.entry(src_addr)//.and_modify(|x|{*x=&mut current_time})
+          //  .or_insert(&mut current_time);
+        //*entry = &mut current_time;
+        //println!("{}",cache.iter().filter(|(_,x)| { x.elapsed().unwrap()<Duration::from_secs(4) }).count());
 
         println!("{}",str::from_utf8(&mut buffer).unwrap());
     }
