@@ -6,18 +6,33 @@ use std::{env,str};
 use std::str::FromStr;
 use std::collections::HashMap;
 use std::time::*;
-use std::os::unix::io::AsRawFd;
+//use std::os::unix::io::AsRawFd;
 use std::{io, mem};
 use std::thread::*;
 use std::thread;
-use nix::sys::socket;
-use nix::sys::socket::sockopt::ReusePort;
+use std::ops::Add;
+//use nix::sys::socket;
+//use nix::sys::socket::sockopt::ReusePort;
 use core::borrow::BorrowMut;
 
-fn connection_listener(){
-    //let mut current_time = SystemTime::now().clone();
-    //let mut cache : HashMap<SocketAddr, &mut SystemTime> = HashMap::new();
+fn sender(){
+    println!("start sending");
+    let mcast_group: Ipv4Addr = "239.0.0.1".parse().expect("");
+    let port = 6000_u16;
+    let any:IpAddr = "0.0.0.0".parse().expect("");
+    let buffer = [0u8; 1600];
+    let socket = UdpSocket::bind((any,0))
+        .expect("could not create server ");
+    loop {
+        match socket.send_to("Hello world!".as_bytes(),&(mcast_group, port)){
+            Ok(size) => println!("send {}bytes", size),
+            Err(e)   => println!("sending error"),
+        }
+        thread::sleep(Duration::from_millis(1000));
+    }
+}
 
+fn connection_listener(){
     let args: Vec<String> = env::args().collect();
     let socket = UdpSocket::bind("0.0.0.0:6000").expect("could not bind socket");
 
@@ -32,37 +47,24 @@ fn connection_listener(){
         IpAddr::V6(ipv6) => socket.join_multicast_v6(&ipv6,0),
     };
     let mut buffer = [0u8; 1600];
-    socket::setsockopt(socket.as_raw_fd(), ReusePort, &true).expect("setsockopt failed");
+    //socket::setsockopt(socket.as_raw_fd(), ReusePort, &true).expect("setsockopt failed");
     socket.set_read_timeout(Option::from(Duration::from_secs(3)));
+    let mut cache :HashMap<SocketAddr,SystemTime> = HashMap::new();
     loop {
         let (_, src_addr) = match socket.recv_from(&mut buffer){
             Ok( (i,addr) ) => (i, addr),
             Err(_) => (0, SocketAddr::from_str("0.0.0.0:6000").unwrap()),
         };
-        //current_time = SystemTime::now().clone();
-        //let entry = cache.entry(src_addr)//.and_modify(|x|{*x=&mut current_time})
-          //  .or_insert(&mut current_time);
-        //*entry = &mut current_time;
-        //println!("{}",cache.iter().filter(|(_,x)| { x.elapsed().unwrap()<Duration::from_secs(4) }).count());
+        cache.entry(src_addr)
+            .and_modify(|x|{x.add(SystemTime::now().duration_since(*x).unwrap());})
+            .or_insert(SystemTime::now());
+
+        println!("{}",cache.iter_mut()
+            .filter(|(_,x)|
+                {SystemTime::now().duration_since(**x).unwrap() < Duration::from_secs(2)}).count()
+        );
 
         println!("{}",str::from_utf8(&mut buffer).unwrap());
-    }
-}
-
-fn sender(){
-    println!("start sending");
-    let mcast_group: Ipv4Addr = "239.0.0.1".parse().expect("");
-    let port = 6000_u16;
-    let any:IpAddr = "0.0.0.0".parse().expect("");
-    let mut buffer = [0u8; 1600];
-    let socket = UdpSocket::bind((any,0))
-        .expect("could not create server ");
-    loop {
-        match socket.send_to("Hello world!".as_bytes(),&(mcast_group, port)){
-            Ok(size) => println!("send {}bytes", size),
-            Err(e)   => println!("sending error"),
-        }
-        thread::sleep(Duration::from_millis(1000));
     }
 }
 
