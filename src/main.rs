@@ -18,11 +18,12 @@ use core::borrow::BorrowMut;
 fn sender(){
     println!("start sending");
     let mcast_group: Ipv4Addr = "239.0.0.1".parse().expect("");
-    let port = 6000_u16;
+    let port = 0_u16;
     let any:IpAddr = "0.0.0.0".parse().expect("");
     let buffer = [0u8; 1600];
     let socket = UdpSocket::bind((any,0))
         .expect("could not create server ");
+    println!("{}",socket.multicast_loop_v4().unwrap());
     loop {
         match socket.send_to("Hello world!".as_bytes(),&(mcast_group, port)){
             Ok(size) => println!("send {}bytes", size),
@@ -34,7 +35,7 @@ fn sender(){
 
 fn connection_listener(){
     let args: Vec<String> = env::args().collect();
-    let socket = UdpSocket::bind("0.0.0.0:6000").expect("could not bind socket");
+    let socket = UdpSocket::bind("0.0.0.0:0").expect("could not bind socket");
 
     socket.set_multicast_loop_v4(true).expect("could not use multicast");
     println!("{:?}",socket);
@@ -46,18 +47,16 @@ fn connection_listener(){
         IpAddr::V4(ipv4) => socket.join_multicast_v4(&ipv4,&Ipv4Addr::new(0,0,0,0)),
         IpAddr::V6(ipv6) => socket.join_multicast_v6(&ipv6,0),
     };
-    let mut buffer = [0u8; 1600];
-    //socket::setsockopt(socket.as_raw_fd(), ReusePort, &true).expect("setsockopt failed");
+    let mut buffer = [0u8; 12];
     socket.set_read_timeout(Option::from(Duration::from_secs(3)));
     let mut cache :HashMap<SocketAddr,SystemTime> = HashMap::new();
     loop {
         let (_, src_addr) = match socket.recv_from(&mut buffer){
             Ok( (i,addr) ) => (i, addr),
-            Err(_) => (0, SocketAddr::from_str("0.0.0.0:6000").unwrap()),
+            Err(_) => (0, SocketAddr::from_str("0.0.0.0:0").unwrap()),
         };
-        cache.entry(src_addr)
-            .and_modify(|x|{x.add(SystemTime::now().duration_since(*x).unwrap());})
-            .or_insert(SystemTime::now());
+
+        cache.insert(src_addr,SystemTime::now());
 
         println!("{}",cache.iter_mut()
             .filter(|(_,x)|
