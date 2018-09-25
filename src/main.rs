@@ -1,24 +1,20 @@
-extern crate nix;
 extern crate core;
+extern crate net2;
 
 use std::net::*;
 use std::{env,str};
 use std::str::FromStr;
 use std::collections::HashMap;
 use std::time::*;
-//use std::os::unix::io::AsRawFd;
-use std::{io, mem};
-use std::thread::*;
 use std::thread;
-use std::ops::Add;
-//use nix::sys::socket;
-//use nix::sys::socket::sockopt::ReusePort;
-use core::borrow::BorrowMut;
+use net2::*;
+use net2::UdpBuilder;
+
 
 fn sender(){
     println!("start sending");
     let mcast_group: Ipv4Addr = "239.0.0.1".parse().expect("");
-    let port = 0_u16;
+    let port = 6000_u16;
     let any:IpAddr = "0.0.0.0".parse().expect("");
     let buffer = [0u8; 1600];
     let socket = UdpSocket::bind((any,0))
@@ -35,18 +31,21 @@ fn sender(){
 
 fn connection_listener(){
     let args: Vec<String> = env::args().collect();
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("could not bind socket");
 
-    socket.set_multicast_loop_v4(true).expect("could not use multicast");
-    println!("{:?}",socket);
     let mcast_group: IpAddr =  match args.get(1){
         Some(str) => str.parse(),
         None => "239.0.0.1".parse(),
     }.expect("wrong address");
+    let udp = match mcast_group {
+        IpAddr::V4(v4_addr) => UdpBuilder::new_v4(),
+        IpAddr::V6(v6_addr) => UdpBuilder::new_v6(),
+    }.unwrap();
+    udp.reuse_address(true).unwrap();
+    let socket = udp.bind("0.0.0.0:6000").expect("could not bind socket");
     match mcast_group {
         IpAddr::V4(ipv4) => socket.join_multicast_v4(&ipv4,&Ipv4Addr::new(0,0,0,0)),
         IpAddr::V6(ipv6) => socket.join_multicast_v6(&ipv6,0),
-    };
+    }.expect("could not join");
     let mut buffer = [0u8; 12];
     socket.set_read_timeout(Option::from(Duration::from_secs(3)));
     let mut cache :HashMap<SocketAddr,SystemTime> = HashMap::new();
@@ -55,9 +54,9 @@ fn connection_listener(){
             Ok( (i,addr) ) => (i, addr),
             Err(_) => (0, SocketAddr::from_str("0.0.0.0:0").unwrap()),
         };
-
-        cache.insert(src_addr,SystemTime::now());
-
+        if str::from_utf8(&buffer) == Ok("Hello world!") {
+            cache.insert(src_addr, SystemTime::now());
+        }
         println!("{}",cache.iter_mut()
             .filter(|(_,x)|
                 {SystemTime::now().duration_since(**x).unwrap() < Duration::from_secs(2)}).count()
